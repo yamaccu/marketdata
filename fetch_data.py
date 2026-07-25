@@ -22,7 +22,7 @@ def download_asset(file_name: str, ticker: str) -> None:
 
     data = yf.download(
         tickers=ticker,
-        period="max",
+        period="1y",
         interval="1d",
         auto_adjust=False,
         progress=False,
