@@ -3,6 +3,10 @@ name: Update market data
 on:
   workflow_dispatch:
 
+  schedule:
+    - cron: "15 19 * * *"
+      timezone: "Asia/Tokyo"
+
 permissions:
   contents: write
 
