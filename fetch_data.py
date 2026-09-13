@@ -7,6 +7,8 @@ import yfinance as yf
 
 OUTPUT_DIR = Path("data")
 JST = "Asia/Tokyo"
+RSI_PERIOD = 14
+MA_PERIODS = (5, 25, 75)
 
 ASSETS = {
     "nikkei225": {
@@ -80,6 +82,56 @@ def select_price_columns(data: pd.DataFrame) -> pd.DataFrame:
     return data[columns].copy()
 
 
+def add_technical_indicators(data: pd.DataFrame) -> pd.DataFrame:
+    """終値からRSI(14)と単純移動平均(5/25/75)を計算して追加する。"""
+
+    result = data.copy()
+    close = result["Close"]
+
+    # Wilder方式のRSI（14期間）
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.ewm(
+        alpha=1 / RSI_PERIOD,
+        adjust=False,
+        min_periods=RSI_PERIOD,
+    ).mean()
+    avg_loss = loss.ewm(
+        alpha=1 / RSI_PERIOD,
+        adjust=False,
+        min_periods=RSI_PERIOD,
+    ).mean()
+
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+
+    # 値動きがない場合などのゼロ除算を明示的に処理
+    rsi = rsi.mask(
+        (avg_gain == 0) & (avg_loss == 0),
+        50.0,
+    )
+    rsi = rsi.mask(
+        (avg_gain > 0) & (avg_loss == 0),
+        100.0,
+    )
+    rsi = rsi.mask(
+        (avg_gain == 0) & (avg_loss > 0),
+        0.0,
+    )
+
+    result[f"RSI{RSI_PERIOD}"] = rsi
+
+    for period in MA_PERIODS:
+        result[f"MA{period}"] = close.rolling(
+            window=period,
+            min_periods=period,
+        ).mean()
+
+    return result
+
+
 def save_daily_data(
     file_name: str,
     ticker: str,
@@ -95,6 +147,7 @@ def save_daily_data(
     )
 
     data = select_price_columns(data)
+    data = add_technical_indicators(data)
     data.index.name = "Date"
 
     output = data.reset_index()
@@ -186,6 +239,7 @@ def save_hourly_data(
 
     data = remove_incomplete_hour(data)
     data = select_price_columns(data)
+    data = add_technical_indicators(data)
 
     data.index.name = "Datetime"
     output = data.reset_index()
