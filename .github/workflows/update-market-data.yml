@@ -43,5 +43,21 @@ jobs:
             echo "CSVに変更はありません"
           else
             git commit -m "Update market data"
-            git push
+
+            for attempt in 1 2 3 4 5; do
+              echo "git pushを試行します ($attempt/5)"
+
+              if git push; then
+                echo "git pushに成功しました"
+                break
+              fi
+
+              if [ "$attempt" -eq 5 ]; then
+                echo "git pushが5回失敗しました"
+                exit 1
+              fi
+
+              echo "10秒後に再試行します"
+              sleep 10
+            done
           fi
