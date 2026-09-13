@@ -1,17 +1,19 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
+import re
 
 import pandas as pd
 import yfinance as yf
 
 
 OUTPUT_DIR = Path("data")
+TICKERS_FILE = Path("tickers.csv")
 JST = "Asia/Tokyo"
 RSI_PERIOD = 14
 MA_PERIODS = (5, 25, 75)
 
-ASSETS = {
+FIXED_ASSETS = {
     "nikkei225": {
         "ticker": "^N225",
         "source_timezone": "Asia/Tokyo",
@@ -33,6 +35,65 @@ PRICE_COLUMNS = [
     "Close",
     "Volume",
 ]
+
+
+def load_japanese_stocks() -> dict[str, dict[str, str]]:
+    """tickers.csvから日本株の監視銘柄を読み込む。"""
+
+    if not TICKERS_FILE.exists():
+        raise FileNotFoundError(
+            f"{TICKERS_FILE}が見つかりません"
+        )
+
+    config = pd.read_csv(
+        TICKERS_FILE,
+        dtype=str,
+    )
+
+    if "ticker" not in config.columns:
+        raise ValueError(
+            "tickers.csvにはticker列が必要です"
+        )
+
+    assets: dict[str, dict[str, str]] = {}
+
+    for raw_ticker in config["ticker"].dropna():
+        code = raw_ticker.strip().upper()
+
+        if not code:
+            continue
+
+        # 誤って .T を付けても受け付ける
+        if code.endswith(".T"):
+            code = code[:-2]
+
+        # 日本の証券コードは数字または英数字4文字を想定
+        if not re.fullmatch(r"[0-9A-Z]{4}", code):
+            raise ValueError(
+                f"日本株の銘柄コードとして不正です: {raw_ticker}"
+            )
+
+        if code in assets:
+            continue
+
+        assets[code] = {
+            "ticker": f"{code}.T",
+            "source_timezone": JST,
+        }
+
+    return assets
+
+
+def clear_old_csvs() -> None:
+    """新しいデータ取得前にdata配下の既存CSVをすべて削除する。"""
+
+    deleted = 0
+
+    for csv_path in OUTPUT_DIR.glob("*.csv"):
+        csv_path.unlink()
+        deleted += 1
+
+    print(f"既存CSVを{deleted}件削除しました")
 
 
 def download_data(
@@ -154,7 +215,7 @@ def save_daily_data(
     file_name: str,
     ticker: str,
 ) -> None:
-    """取得可能な全期間の日足をCSVへ上書き保存する。"""
+    """直近1年の日足をCSVへ保存する。"""
 
     print(f"{ticker}の日足を取得します")
 
@@ -234,7 +295,7 @@ def save_hourly_data(
     ticker: str,
     source_timezone: str,
 ) -> None:
-    """直近約60日の1時間足をCSVへ上書き保存する。"""
+    """直近約60日の1時間足をCSVへ保存する。"""
 
     print(f"{ticker}の1時間足を取得します")
 
@@ -290,9 +351,23 @@ def main() -> None:
         exist_ok=True,
     )
 
+    # 設定ミスで既存データを消さないよう、先に設定ファイルを検証する
+    japanese_stocks = load_japanese_stocks()
+
+    assets = {
+        **FIXED_ASSETS,
+        **japanese_stocks,
+    }
+
+    print(
+        f"固定3資産 + 日本株{len(japanese_stocks)}銘柄を取得します"
+    )
+
+    clear_old_csvs()
+
     errors: list[str] = []
 
-    for file_name, config in ASSETS.items():
+    for file_name, config in assets.items():
         ticker = config["ticker"]
 
         try:
