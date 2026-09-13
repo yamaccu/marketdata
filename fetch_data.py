@@ -31,7 +31,6 @@ PRICE_COLUMNS = [
     "High",
     "Low",
     "Close",
-    "Adj Close",
     "Volume",
 ]
 
@@ -136,14 +135,17 @@ def add_technical_indicators(data: pd.DataFrame) -> pd.DataFrame:
         0.0,
     )
 
-    result[f"RSI{RSI_PERIOD}"] = rsi.map(round_half_up_1)
+    result[f"RSI{RSI_PERIOD}"] = rsi
 
     for period in MA_PERIODS:
-        ma = close.rolling(
+        result[f"MA{period}"] = close.rolling(
             window=period,
             min_periods=period,
         ).mean()
-        result[f"MA{period}"] = ma.map(round_half_up_1)
+
+    # CSVへ出力する全数値列を小数点第1位に四捨五入する
+    for column in result.columns:
+        result[column] = result[column].map(round_half_up_1)
 
     return result
 
@@ -178,7 +180,7 @@ def save_daily_data(
         output_path,
         index=False,
         encoding="utf-8",
-        float_format="%.6f",
+        float_format="%.1f",
     )
 
     print(
@@ -273,7 +275,7 @@ def save_hourly_data(
         output_path,
         index=False,
         encoding="utf-8",
-        float_format="%.6f",
+        float_format="%.1f",
     )
 
     print(
