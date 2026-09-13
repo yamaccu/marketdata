@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 import pandas as pd
@@ -82,6 +83,20 @@ def select_price_columns(data: pd.DataFrame) -> pd.DataFrame:
     return data[columns].copy()
 
 
+def round_half_up_1(value: float) -> float:
+    """小数点第2位以下を四捨五入し、小数点第1位までのfloatにする。"""
+
+    if pd.isna(value):
+        return value
+
+    return float(
+        Decimal(str(value)).quantize(
+            Decimal("0.1"),
+            rounding=ROUND_HALF_UP,
+        )
+    )
+
+
 def add_technical_indicators(data: pd.DataFrame) -> pd.DataFrame:
     """終値からRSI(14)と単純移動平均(5/25/75)を計算して追加する。"""
 
@@ -121,13 +136,14 @@ def add_technical_indicators(data: pd.DataFrame) -> pd.DataFrame:
         0.0,
     )
 
-    result[f"RSI{RSI_PERIOD}"] = rsi
+    result[f"RSI{RSI_PERIOD}"] = rsi.map(round_half_up_1)
 
     for period in MA_PERIODS:
-        result[f"MA{period}"] = close.rolling(
+        ma = close.rolling(
             window=period,
             min_periods=period,
         ).mean()
+        result[f"MA{period}"] = ma.map(round_half_up_1)
 
     return result
 
