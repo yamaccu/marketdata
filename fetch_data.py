@@ -26,6 +26,10 @@ FIXED_ASSETS = {
         "ticker": "BTC-USD",
         "source_timezone": "UTC",
     },
+    "topix_etf": {
+        "ticker": "1306.T",
+        "source_timezone": JST,
+    },
 }
 
 PRICE_COLUMNS = [
@@ -360,7 +364,7 @@ def main() -> None:
     }
 
     print(
-        f"固定3資産 + 日本株{len(japanese_stocks)}銘柄を取得します"
+        f"固定{len(FIXED_ASSETS)}資産 + 日本株{len(japanese_stocks)}銘柄を取得します"
     )
 
     clear_old_csvs()
