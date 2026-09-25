@@ -1,4 +1,4 @@
-日経平均、金先物、ビットコイン、TOPIX連動ETFと、`tickers.csv` に登録した日本株のローソク足データ（日足と1時間足）を、1日1回、17:15に取得します。  
+Github Actionsを実行することで、日経平均、金先物、ビットコイン、TOPIX連動ETFと、`tickers.csv` に登録した日本株のローソク足データ（日足と1時間足）を取得します。  
 Pythonのyfinanceを使用しています。  
 [yfinance](https://ranaroussi.github.io/yfinance/)
 
