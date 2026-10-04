@@ -9,8 +9,7 @@ Pythonのyfinanceを使用しています。
 - ビットコイン: `BTC-USD`
 - TOPIX代理データ: `1306.T`（NF・TOPIX ETF）
 
-`yfinance` ではTOPIX指数そのものを直接取得できないため、TOPIX連動ETFの `1306.T` を代理データとして使用します。  
-出力ファイルは `data/topix_etf.csv` と `data/topix_etf_1h.csv` です。
+`yfinance` ではTOPIX指数そのものを直接取得できないため、TOPIX連動ETFの `1306.T` を代理データとして使用します。
 
 ## 日本株の監視銘柄
 
