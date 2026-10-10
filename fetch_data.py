@@ -18,6 +18,10 @@ FIXED_ASSETS = {
         "ticker": "^N225",
         "source_timezone": "Asia/Tokyo",
     },
+    "nikkei225_futures": {
+        "ticker": "NIY=F",
+        "source_timezone": "America/Chicago",
+    },
     "gold_futures": {
         "ticker": "GC=F",
         "source_timezone": "America/Chicago",
