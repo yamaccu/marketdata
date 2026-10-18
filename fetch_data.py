@@ -11,6 +11,7 @@ OUTPUT_DIR = Path("data")
 TICKERS_FILE = Path("tickers.csv")
 JST = "Asia/Tokyo"
 RSI_PERIOD = 14
+ADX_PERIOD = 14
 MA_PERIODS = (5, 25, 75)
 
 FIXED_ASSETS = {
@@ -165,8 +166,55 @@ def round_half_up_1(value: float) -> float:
     )
 
 
+def calculate_adx(data: pd.DataFrame, period: int = ADX_PERIOD) -> pd.Series:
+    """Wilder方式でADXを計算する（+DI/-DIは内部計算のみ）。"""
+    high = data["High"]
+    low = data["Low"]
+    close = data["Close"]
+
+    up_move = high.diff()
+    down_move = -low.diff()
+    plus_dm = up_move.where(
+        (up_move > down_move) & (up_move > 0), 0.0
+    )
+    minus_dm = down_move.where(
+        (down_move > up_move) & (down_move > 0), 0.0
+    )
+
+    true_range = pd.concat(
+        [
+            high - low,
+            (high - close.shift(1)).abs(),
+            (low - close.shift(1)).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+
+    def wilder_average(values: pd.Series, start: int) -> pd.Series:
+        """初回は単純平均、以降はWilder方式で平滑化する。"""
+        average = pd.Series(float("nan"), index=values.index)
+        first = start + period - 1
+        if len(values) <= first:
+            return average
+
+        average.iloc[first] = values.iloc[start:first + 1].mean()
+        for i in range(first + 1, len(values)):
+            average.iloc[i] = (
+                average.iloc[i - 1] * (period - 1) + values.iloc[i]
+            ) / period
+        return average
+
+    smoothed_tr = wilder_average(true_range, start=1)
+    plus_di = 100 * wilder_average(plus_dm, start=1) / smoothed_tr
+    minus_di = 100 * wilder_average(minus_dm, start=1) / smoothed_tr
+
+    di_sum = (plus_di + minus_di).replace(0, float("nan"))
+    dx = (100 * (plus_di - minus_di).abs() / di_sum).fillna(0.0)
+    return wilder_average(dx, start=period)
+
+
 def add_technical_indicators(data: pd.DataFrame) -> pd.DataFrame:
-    """終値からRSI(14)と単純移動平均(5/25/75)を計算して追加する。"""
+    """RSI(14)、MA(5/25/75)、ADX(14)を計算して追加する。"""
 
     result = data.copy()
     close = result["Close"]
@@ -211,6 +259,8 @@ def add_technical_indicators(data: pd.DataFrame) -> pd.DataFrame:
             window=period,
             min_periods=period,
         ).mean()
+
+    result[f"ADX{ADX_PERIOD}"] = calculate_adx(result)
 
     # CSVへ出力する全数値列を小数点第1位に四捨五入する
     for column in result.columns:
