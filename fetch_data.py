@@ -166,8 +166,10 @@ def round_half_up_1(value: float) -> float:
     )
 
 
-def calculate_adx(data: pd.DataFrame, period: int = ADX_PERIOD) -> pd.Series:
-    """Wilder方式でADXを計算する（+DI/-DIは内部計算のみ）。"""
+def calculate_directional_indicators(
+    data: pd.DataFrame, period: int = ADX_PERIOD
+) -> pd.DataFrame:
+    """Wilder方式でADXと+DI/-DIを計算する。"""
     high = data["High"]
     low = data["Low"]
     close = data["Close"]
@@ -210,11 +212,18 @@ def calculate_adx(data: pd.DataFrame, period: int = ADX_PERIOD) -> pd.Series:
 
     di_sum = (plus_di + minus_di).replace(0, float("nan"))
     dx = (100 * (plus_di - minus_di).abs() / di_sum).fillna(0.0)
-    return wilder_average(dx, start=period)
+    return pd.DataFrame(
+        {
+            f"ADX{period}": wilder_average(dx, start=period),
+            f"+DI{period}": plus_di,
+            f"-DI{period}": minus_di,
+        },
+        index=data.index,
+    )
 
 
 def add_technical_indicators(data: pd.DataFrame) -> pd.DataFrame:
-    """RSI(14)、MA(5/25/75)、ADX(14)を計算して追加する。"""
+    """RSI(14)、MA(5/25/75)、ADX(14)、+DI/-DI(14)を計算して追加する。"""
 
     result = data.copy()
     close = result["Close"]
@@ -260,7 +269,8 @@ def add_technical_indicators(data: pd.DataFrame) -> pd.DataFrame:
             min_periods=period,
         ).mean()
 
-    result[f"ADX{ADX_PERIOD}"] = calculate_adx(result)
+    directional = calculate_directional_indicators(result)
+    result[directional.columns] = directional
 
     # CSVへ出力する全数値列を小数点第1位に四捨五入する
     for column in result.columns:
