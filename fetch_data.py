@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
+from tempfile import TemporaryDirectory
 import re
 
 import pandas as pd
@@ -93,16 +94,20 @@ def load_japanese_stocks() -> dict[str, dict[str, str]]:
     return assets
 
 
-def clear_old_csvs() -> None:
-    """新しいデータ取得前にdata配下の既存CSVをすべて削除する。"""
+def publish_staged_csvs(staging_dir: Path) -> None:
+    """全銘柄の取得成功後にだけCSVを差し替える。"""
+    staged = sorted(staging_dir.glob("*.csv"))
+    if not staged:
+        raise RuntimeError("新しいCSVがありません")
+    names = {file.name for file in staged}
 
-    deleted = 0
+    for file in staged:
+        file.replace(OUTPUT_DIR / file.name)
 
-    for csv_path in OUTPUT_DIR.glob("*.csv"):
-        csv_path.unlink()
-        deleted += 1
-
-    print(f"既存CSVを{deleted}件削除しました")
+    # 監視対象から外れた銘柄のCSVは、全件取得成功後にだけ削除する。
+    for file in OUTPUT_DIR.glob("*.csv"):
+        if file.name not in names:
+            file.unlink()
 
 
 def download_data(
@@ -282,6 +287,7 @@ def add_technical_indicators(data: pd.DataFrame) -> pd.DataFrame:
 def save_daily_data(
     file_name: str,
     ticker: str,
+    output_dir: Path = OUTPUT_DIR,
 ) -> None:
     """直近1年の日足をCSVへ保存する。"""
 
@@ -303,7 +309,7 @@ def save_daily_data(
         output["Date"]
     ).dt.strftime("%Y-%m-%d")
 
-    output_path = OUTPUT_DIR / f"{file_name}.csv"
+    output_path = output_dir / f"{file_name}.csv"
 
     output.to_csv(
         output_path,
@@ -362,15 +368,15 @@ def save_hourly_data(
     file_name: str,
     ticker: str,
     source_timezone: str,
+    output_dir: Path = OUTPUT_DIR,
 ) -> None:
-    """直近約60日の1時間足をCSVへ保存する。"""
+    """直近約729日の1時間足をCSVへ保存する。"""
 
     print(f"{ticker}の1時間足を取得します")
 
-    # yfinanceの日中足は直近60日までなので、
-    # 境界エラーを避けるため59日前から取得する
+    # Yahoo Financeの1時間足は過去730日が上限。境界を避けて729日取得する。
     end = datetime.now(timezone.utc)
-    start = end - timedelta(days=59)
+    start = end - timedelta(days=729)
 
     data = download_data(
         ticker=ticker,
@@ -398,7 +404,7 @@ def save_hourly_data(
         .dt.strftime("%Y-%m-%dT%H:%M:%S%z")
     )
 
-    output_path = OUTPUT_DIR / f"{file_name}_1h.csv"
+    output_path = output_dir / f"{file_name}_1h.csv"
 
     output.to_csv(
         output_path,
@@ -431,35 +437,37 @@ def main() -> None:
         f"固定{len(FIXED_ASSETS)}資産 + 日本株{len(japanese_stocks)}銘柄を取得します"
     )
 
-    clear_old_csvs()
+    # 全銘柄を先に一時領域へ保存。1件でも取得に失敗したら既存CSVは変更しない。
+    with TemporaryDirectory(prefix=".marketdata_stage_", dir=OUTPUT_DIR.parent) as tmp:
+        staging_dir = Path(tmp)
+        errors: list[str] = []
 
-    errors: list[str] = []
+        for file_name, config in assets.items():
+            ticker = config["ticker"]
+            try:
+                save_daily_data(
+                    file_name=file_name,
+                    ticker=ticker,
+                    output_dir=staging_dir,
+                )
+                save_hourly_data(
+                    file_name=file_name,
+                    ticker=ticker,
+                    source_timezone=config["source_timezone"],
+                    output_dir=staging_dir,
+                )
+            except Exception as exc:
+                message = f"{ticker}: {exc}"
+                errors.append(message)
+                print(f"エラー: {message}")
 
-    for file_name, config in assets.items():
-        ticker = config["ticker"]
-
-        try:
-            save_daily_data(
-                file_name=file_name,
-                ticker=ticker,
+        if errors:
+            raise RuntimeError(
+                "一部のデータ取得に失敗しました。既存CSVは変更していません:\n"
+                + "\n".join(errors)
             )
 
-            save_hourly_data(
-                file_name=file_name,
-                ticker=ticker,
-                source_timezone=config["source_timezone"],
-            )
-
-        except Exception as exc:
-            message = f"{ticker}: {exc}"
-            errors.append(message)
-            print(f"エラー: {message}")
-
-    if errors:
-        raise RuntimeError(
-            "一部のデータ取得に失敗しました:\n"
-            + "\n".join(errors)
-        )
+        publish_staged_csvs(staging_dir)
 
     print("すべての市場データを正常に保存しました")
 
