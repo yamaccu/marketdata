@@ -289,13 +289,17 @@ def save_daily_data(
     ticker: str,
     output_dir: Path = OUTPUT_DIR,
 ) -> None:
-    """直近1年の日足をCSVへ保存する。"""
+    """直近約3年の日足をCSVへ保存する。"""
 
     print(f"{ticker}の日足を取得します")
 
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=1095)
+
     data = download_data(
         ticker=ticker,
-        period="1y",
+        start=start,
+        end=end,
         interval="1d",
     )
 
