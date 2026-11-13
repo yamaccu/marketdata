@@ -23,14 +23,17 @@ FIXED_ASSETS = {
     "nikkei225_futures": {
         "ticker": "NIY=F",
         "source_timezone": "America/Chicago",
+        "hourly_days": 90,
     },
     "gold_futures": {
         "ticker": "GC=F",
         "source_timezone": "America/Chicago",
+        "hourly_days": 90,
     },
     "bitcoin": {
         "ticker": "BTC-USD",
         "source_timezone": "UTC",
+        "hourly_days": 90,
     },
     "topix_etf": {
         "ticker": "1306.T",
@@ -373,14 +376,15 @@ def save_hourly_data(
     ticker: str,
     source_timezone: str,
     output_dir: Path = OUTPUT_DIR,
+    days: int = 365,
 ) -> None:
-    """直近約1年（365日）の1時間足をCSVへ保存する。"""
+    """指定日数分（通常365日）の1時間足をCSVへ保存する。"""
 
     print(f"{ticker}の1時間足を取得します")
 
-    # CSV容量を抑えるため1時間足は直近365日分に限定する。
+    # 先物・金・BTCは90日、それ以外は365日分を取得する。
     end = datetime.now(timezone.utc)
-    start = end - timedelta(days=365)
+    start = end - timedelta(days=days)
 
     data = download_data(
         ticker=ticker,
@@ -459,6 +463,7 @@ def main() -> None:
                     ticker=ticker,
                     source_timezone=config["source_timezone"],
                     output_dir=staging_dir,
+                    days=config.get("hourly_days", 365),
                 )
             except Exception as exc:
                 message = f"{ticker}: {exc}"
