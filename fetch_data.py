@@ -374,13 +374,13 @@ def save_hourly_data(
     source_timezone: str,
     output_dir: Path = OUTPUT_DIR,
 ) -> None:
-    """直近約729日の1時間足をCSVへ保存する。"""
+    """直近約1年（365日）の1時間足をCSVへ保存する。"""
 
     print(f"{ticker}の1時間足を取得します")
 
-    # Yahoo Financeの1時間足は過去730日が上限。境界を避けて729日取得する。
+    # CSV容量を抑えるため1時間足は直近365日分に限定する。
     end = datetime.now(timezone.utc)
-    start = end - timedelta(days=729)
+    start = end - timedelta(days=365)
 
     data = download_data(
         ticker=ticker,
