@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
-from tempfile import TemporaryDirectory
 import re
 
 import pandas as pd
@@ -23,17 +22,14 @@ FIXED_ASSETS = {
     "nikkei225_futures": {
         "ticker": "NIY=F",
         "source_timezone": "America/Chicago",
-        "hourly_days": 90,
     },
     "gold_futures": {
         "ticker": "GC=F",
         "source_timezone": "America/Chicago",
-        "hourly_days": 90,
     },
     "bitcoin": {
         "ticker": "BTC-USD",
         "source_timezone": "UTC",
-        "hourly_days": 90,
     },
     "topix_etf": {
         "ticker": "1306.T",
@@ -97,20 +93,16 @@ def load_japanese_stocks() -> dict[str, dict[str, str]]:
     return assets
 
 
-def publish_staged_csvs(staging_dir: Path) -> None:
-    """全銘柄の取得成功後にだけCSVを差し替える。"""
-    staged = sorted(staging_dir.glob("*.csv"))
-    if not staged:
-        raise RuntimeError("新しいCSVがありません")
-    names = {file.name for file in staged}
+def clear_old_csvs() -> None:
+    """新しいデータ取得前にdata配下の既存CSVをすべて削除する。"""
 
-    for file in staged:
-        file.replace(OUTPUT_DIR / file.name)
+    deleted = 0
 
-    # 監視対象から外れた銘柄のCSVは、全件取得成功後にだけ削除する。
-    for file in OUTPUT_DIR.glob("*.csv"):
-        if file.name not in names:
-            file.unlink()
+    for csv_path in OUTPUT_DIR.glob("*.csv"):
+        csv_path.unlink()
+        deleted += 1
+
+    print(f"既存CSVを{deleted}件削除しました")
 
 
 def download_data(
@@ -290,19 +282,14 @@ def add_technical_indicators(data: pd.DataFrame) -> pd.DataFrame:
 def save_daily_data(
     file_name: str,
     ticker: str,
-    output_dir: Path = OUTPUT_DIR,
 ) -> None:
-    """直近約3年の日足をCSVへ保存する。"""
+    """直近1年の日足をCSVへ保存する。"""
 
     print(f"{ticker}の日足を取得します")
 
-    end = datetime.now(timezone.utc)
-    start = end - timedelta(days=1095)
-
     data = download_data(
         ticker=ticker,
-        start=start,
-        end=end,
+        period="1y",
         interval="1d",
     )
 
@@ -316,7 +303,7 @@ def save_daily_data(
         output["Date"]
     ).dt.strftime("%Y-%m-%d")
 
-    output_path = output_dir / f"{file_name}.csv"
+    output_path = OUTPUT_DIR / f"{file_name}.csv"
 
     output.to_csv(
         output_path,
@@ -375,16 +362,15 @@ def save_hourly_data(
     file_name: str,
     ticker: str,
     source_timezone: str,
-    output_dir: Path = OUTPUT_DIR,
-    days: int = 365,
 ) -> None:
-    """指定日数分（通常365日）の1時間足をCSVへ保存する。"""
+    """直近約60日の1時間足をCSVへ保存する。"""
 
     print(f"{ticker}の1時間足を取得します")
 
-    # 先物・金・BTCは90日、それ以外は365日分を取得する。
+    # yfinanceの日中足は直近60日までなので、
+    # 境界エラーを避けるため59日前から取得する
     end = datetime.now(timezone.utc)
-    start = end - timedelta(days=days)
+    start = end - timedelta(days=59)
 
     data = download_data(
         ticker=ticker,
@@ -412,7 +398,7 @@ def save_hourly_data(
         .dt.strftime("%Y-%m-%dT%H:%M:%S%z")
     )
 
-    output_path = output_dir / f"{file_name}_1h.csv"
+    output_path = OUTPUT_DIR / f"{file_name}_1h.csv"
 
     output.to_csv(
         output_path,
@@ -445,38 +431,35 @@ def main() -> None:
         f"固定{len(FIXED_ASSETS)}資産 + 日本株{len(japanese_stocks)}銘柄を取得します"
     )
 
-    # 全銘柄を先に一時領域へ保存。1件でも取得に失敗したら既存CSVは変更しない。
-    with TemporaryDirectory(prefix=".marketdata_stage_", dir=OUTPUT_DIR.parent) as tmp:
-        staging_dir = Path(tmp)
-        errors: list[str] = []
+    clear_old_csvs()
 
-        for file_name, config in assets.items():
-            ticker = config["ticker"]
-            try:
-                save_daily_data(
-                    file_name=file_name,
-                    ticker=ticker,
-                    output_dir=staging_dir,
-                )
-                save_hourly_data(
-                    file_name=file_name,
-                    ticker=ticker,
-                    source_timezone=config["source_timezone"],
-                    output_dir=staging_dir,
-                    days=config.get("hourly_days", 365),
-                )
-            except Exception as exc:
-                message = f"{ticker}: {exc}"
-                errors.append(message)
-                print(f"エラー: {message}")
+    errors: list[str] = []
 
-        if errors:
-            raise RuntimeError(
-                "一部のデータ取得に失敗しました。既存CSVは変更していません:\n"
-                + "\n".join(errors)
+    for file_name, config in assets.items():
+        ticker = config["ticker"]
+
+        try:
+            save_daily_data(
+                file_name=file_name,
+                ticker=ticker,
             )
 
-        publish_staged_csvs(staging_dir)
+            save_hourly_data(
+                file_name=file_name,
+                ticker=ticker,
+                source_timezone=config["source_timezone"],
+            )
+
+        except Exception as exc:
+            message = f"{ticker}: {exc}"
+            errors.append(message)
+            print(f"エラー: {message}")
+
+    if errors:
+        raise RuntimeError(
+            "一部のデータ取得に失敗しました:\n"
+            + "\n".join(errors)
+        )
 
     print("すべての市場データを正常に保存しました")
 
