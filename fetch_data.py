@@ -46,8 +46,8 @@ PRICE_COLUMNS = [
 ]
 
 
-def load_japanese_stocks() -> dict[str, dict[str, str]]:
-    """tickers.csvから日本株の監視銘柄を読み込む。"""
+def load_stocks() -> dict[str, dict[str, str]]:
+    """tickers.csvから日本株・米国株の監視銘柄を読み込む。"""
 
     if not TICKERS_FILE.exists():
         raise FileNotFoundError(
@@ -72,22 +72,34 @@ def load_japanese_stocks() -> dict[str, dict[str, str]]:
         if not code:
             continue
 
-        # 誤って .T を付けても受け付ける
-        if code.endswith(".T"):
+        # 日本株: 7203 / 314A / 7203.T
+        # 米国株: AAPL / NVDA / MSTU / BRK.B (Yahoo形式は BRK-B)
+        explicit_japan = code.endswith(".T")
+        if explicit_japan:
             code = code[:-2]
 
-        # 日本の証券コードは数字または英数字4文字を想定
-        if not re.fullmatch(r"[0-9A-Z]{4}", code):
+        if re.fullmatch(r"(?:[0-9]{4}|[0-9]{3}[A-Z])", code):
+            file_name = code
+            ticker = f"{code}.T"
+            source_timezone = JST
+        elif not explicit_japan and re.fullmatch(
+            r"[A-Z][A-Z0-9]*(?:[.-][A-Z0-9]+)*", code
+        ):
+            # 米国株のクラス株表記はYahoo Finance形式へ正規化
+            file_name = code.replace(".", "-")
+            ticker = file_name
+            source_timezone = "America/New_York"
+        else:
             raise ValueError(
-                f"日本株の銘柄コードとして不正です: {raw_ticker}"
+                f"対応していない銘柄コードです: {raw_ticker}"
             )
 
-        if code in assets:
+        if file_name in assets:
             continue
 
-        assets[code] = {
-            "ticker": f"{code}.T",
-            "source_timezone": JST,
+        assets[file_name] = {
+            "ticker": ticker,
+            "source_timezone": source_timezone,
         }
 
     return assets
@@ -420,15 +432,15 @@ def main() -> None:
     )
 
     # 設定ミスで既存データを消さないよう、先に設定ファイルを検証する
-    japanese_stocks = load_japanese_stocks()
+    stocks = load_stocks()
 
     assets = {
         **FIXED_ASSETS,
-        **japanese_stocks,
+        **stocks,
     }
 
     print(
-        f"固定{len(FIXED_ASSETS)}資産 + 日本株{len(japanese_stocks)}銘柄を取得します"
+        f"固定{len(FIXED_ASSETS)}資産 + 登録銘柄{len(stocks)}件を取得します"
     )
 
     clear_old_csvs()
