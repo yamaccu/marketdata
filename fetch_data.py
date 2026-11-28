@@ -11,7 +11,8 @@ OUTPUT_DIR = Path("data")
 TICKERS_FILE = Path("tickers.csv")
 JST = "Asia/Tokyo"
 RSI_PERIOD = 14
-ADX_PERIOD = 14
+DI_PERIOD = 14
+ADX_PERIOD = 9
 MA_PERIODS = (5, 25, 75)
 
 FIXED_ASSETS = {
@@ -179,12 +180,12 @@ def round_half_up_1(value: float) -> float:
 
 
 def calculate_directional_indicators(
-    data: pd.DataFrame, period: int = ADX_PERIOD
+    data: pd.DataFrame, period: int = DI_PERIOD
 ) -> pd.DataFrame:
-    """楽天証券マーケットスピードII方式でADXと+DI/-DIを計算する。
+    """楽天証券iSPEEDの初期設定（DI14、ADX9）で方向性指数を計算する。
 
-    DI = 100 * 直近period本の±DM合計 / 直近period本のTR合計
-    ADX = 直近period本のDXの単純平均
+    DI = 100 * 直近14本の±DM合計 / 直近14本のTR合計
+    ADX = 直近9本のDXの単純平均
     """
     high = data["High"]
     low = data["Low"]
@@ -227,11 +228,13 @@ def calculate_directional_indicators(
     dx = 100 * (plus_di - minus_di).abs() / di_sum
     # 値動きはあっても方向性がない場合はDX=0
     dx = dx.mask((plus_di == 0) & (minus_di == 0), 0.0)
-    adx = dx.rolling(window=period, min_periods=period).mean()
+    adx = dx.rolling(window=ADX_PERIOD, min_periods=ADX_PERIOD).mean()
 
     return pd.DataFrame(
         {
-            f"ADX{period}": adx,
+            # 既存のチャート側との互換性のため、列名「ADX14」は維持。
+            # 値はiSPEED初期設定のADX9（DI14）であり、14期間ADXではない。
+            f"ADX{DI_PERIOD}": adx,
             f"+DI{period}": plus_di,
             f"-DI{period}": minus_di,
         },
@@ -239,7 +242,7 @@ def calculate_directional_indicators(
     )
 
 def add_technical_indicators(data: pd.DataFrame) -> pd.DataFrame:
-    """RSI(14)、MA(5/25/75)、ADX(14)、+DI/-DI(14)を計算して追加する。"""
+    """RSI14、MA5/25/75、DMI(DI14・ADX9)を計算して追加する。"""
 
     result = data.copy()
     close = result["Close"]
