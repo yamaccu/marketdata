@@ -47,7 +47,7 @@ MSTZ,米国ETF
 - `MA5`
 - `MA25`
 - `MA75`
-- `ADX14`
+- `ADX14`（既存のCSV列名を維持。値はiSPEED標準のADX9＝DI14を用いたDXの9本単純平均）
 - `+DI14`
 - `-DI14`
 
