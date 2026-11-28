@@ -308,7 +308,7 @@ def save_daily_data(
 
     data = download_data(
         ticker=ticker,
-        period="1y",
+        period="2y",
         interval="1d",
     )
 
