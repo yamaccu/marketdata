@@ -181,7 +181,11 @@ def round_half_up_1(value: float) -> float:
 def calculate_directional_indicators(
     data: pd.DataFrame, period: int = ADX_PERIOD
 ) -> pd.DataFrame:
-    """Wilder方式でADXと+DI/-DIを計算する。"""
+    """楽天証券マーケットスピードII方式でADXと+DI/-DIを計算する。
+
+    DI = 100 * 直近period本の±DM合計 / 直近period本のTR合計
+    ADX = 直近period本のDXの単純平均
+    """
     high = data["High"]
     low = data["Low"]
     close = data["Close"]
@@ -204,35 +208,35 @@ def calculate_directional_indicators(
         axis=1,
     ).max(axis=1)
 
-    def wilder_average(values: pd.Series, start: int) -> pd.Series:
-        """初回は単純平均、以降はWilder方式で平滑化する。"""
-        average = pd.Series(float("nan"), index=values.index)
-        first = start + period - 1
-        if len(values) <= first:
-            return average
+    # 前足が必要なため、最初の行を14本の計算対象に含めない
+    if not data.empty:
+        plus_dm.iloc[0] = float("nan")
+        minus_dm.iloc[0] = float("nan")
+        true_range.iloc[0] = float("nan")
 
-        average.iloc[first] = values.iloc[start:first + 1].mean()
-        for i in range(first + 1, len(values)):
-            average.iloc[i] = (
-                average.iloc[i - 1] * (period - 1) + values.iloc[i]
-            ) / period
-        return average
+    tr_sum = true_range.rolling(window=period, min_periods=period).sum()
+    plus_dm_sum = plus_dm.rolling(window=period, min_periods=period).sum()
+    minus_dm_sum = minus_dm.rolling(window=period, min_periods=period).sum()
 
-    smoothed_tr = wilder_average(true_range, start=1)
-    plus_di = 100 * wilder_average(plus_dm, start=1) / smoothed_tr
-    minus_di = 100 * wilder_average(minus_dm, start=1) / smoothed_tr
+    # 楽天証券方式: Wilder平滑化ではなく、直近期間の合計からDIを算出
+    valid_tr = tr_sum.replace(0.0, float("nan"))
+    plus_di = 100 * plus_dm_sum / valid_tr
+    minus_di = 100 * minus_dm_sum / valid_tr
 
-    di_sum = (plus_di + minus_di).replace(0, float("nan"))
-    dx = (100 * (plus_di - minus_di).abs() / di_sum).fillna(0.0)
+    di_sum = (plus_di + minus_di).replace(0.0, float("nan"))
+    dx = 100 * (plus_di - minus_di).abs() / di_sum
+    # 値動きはあっても方向性がない場合はDX=0
+    dx = dx.mask((plus_di == 0) & (minus_di == 0), 0.0)
+    adx = dx.rolling(window=period, min_periods=period).mean()
+
     return pd.DataFrame(
         {
-            f"ADX{period}": wilder_average(dx, start=period),
+            f"ADX{period}": adx,
             f"+DI{period}": plus_di,
             f"-DI{period}": minus_di,
         },
         index=data.index,
     )
-
 
 def add_technical_indicators(data: pd.DataFrame) -> pd.DataFrame:
     """RSI(14)、MA(5/25/75)、ADX(14)、+DI/-DI(14)を計算して追加する。"""
